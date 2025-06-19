@@ -42,7 +42,7 @@
 #include <linux/of_gpio.h>
 #include <linux/platform_device.h>
 
-#include <synaptics_dsx.h>
+#include "synaptics_dsx.h"
 #include "synaptics_dsx_core.h"
 
 #define SYN_I2C_RETRY_TIMES 10
@@ -69,13 +69,19 @@ static int parse_dt(struct device *dev, struct synaptics_dsx_board_data *bdata)
 	struct property *prop;
 	struct device_node *np = dev->of_node;
 
-	bdata->irq_gpio = of_get_named_gpio_flags(np,
-			"synaptics,irq-gpio", 0,
-			(enum of_gpio_flags *)&bdata->irq_flags);
-	bdata->reset_gpio = of_get_named_gpio_flags(np,
-			"synaptics,rst-gpio", 0,
-			NULL);
-printk("reset gpio : %d\n", bdata->reset_gpio);
+	bdata->irq_gpio = devm_gpiod_get_optional(dev, "irq", GPIOD_IN);
+
+	retval = of_property_read_u32(np, "synaptics,reset-on-state",
+			&value);
+	bdata->reset_on_state = value;
+
+	bdata->reset_gpio = devm_gpiod_get_optional(dev, "reset", bdata->reset_on_state ? GPIOD_OUT_HIGH : GPIOD_OUT_LOW);
+	if (!IS_ERR(bdata->reset_gpio) && retval < 0) {
+		dev_err(dev, "%s: Unable to read synaptics,reset-on-state property\n",
+				__func__);
+		return retval;
+	}
+
 	retval = of_property_read_u32(np, "synaptics,irq-on-state",
 			&value);
 	if (retval < 0)
@@ -95,21 +101,15 @@ printk("reset gpio : %d\n", bdata->reset_gpio);
 	else
 		bdata->bus_reg_name = name;
 
-	prop = of_find_property(np, "synaptics,power-gpio", NULL);
-	if (prop && prop->length) {
-		bdata->power_gpio = of_get_named_gpio_flags(np,
-				"synaptics,power-gpio", 0, NULL);
-		retval = of_property_read_u32(np, "synaptics,power-on-state",
-				&value);
-		if (retval < 0) {
-			dev_err(dev, "%s: Unable to read synaptics,power-on-state property\n",
-					__func__);
-			return retval;
-		} else {
-			bdata->power_on_state = value;
-		}
-	} else {
-		bdata->power_gpio = -1;
+	retval = of_property_read_u32(np, "synaptics,power-on-state",
+			&value);
+	bdata->power_on_state = value;
+
+	bdata->power_gpio = devm_gpiod_get_optional(dev, "power", bdata->power_on_state ? GPIOD_OUT_HIGH : GPIOD_OUT_LOW);
+	if (!IS_ERR(bdata->power_gpio) && retval < 0) {
+		dev_err(dev, "%s: Unable to read synaptics,power-on-state property\n",
+				__func__);
+		return retval;
 	}
 
 	prop = of_find_property(np, "synaptics,power-delay-ms", NULL);
@@ -127,19 +127,8 @@ printk("reset gpio : %d\n", bdata->reset_gpio);
 		bdata->power_delay_ms = 0;
 	}
 
-	prop = of_find_property(np, "synaptics,reset-gpio", NULL);
+	prop = of_find_property(np, "synaptics,reset-active-ms", NULL);
 	if (prop && prop->length) {
-		bdata->reset_gpio = of_get_named_gpio_flags(np,
-				"synaptics,reset-gpio", 0, NULL);
-		retval = of_property_read_u32(np, "synaptics,reset-on-state",
-				&value);
-		if (retval < 0) {
-			dev_err(dev, "%s: Unable to read synaptics,reset-on-state property\n",
-					__func__);
-			return retval;
-		} else {
-			bdata->reset_on_state = value;
-		}
 		retval = of_property_read_u32(np, "synaptics,reset-active-ms",
 				&value);
 		if (retval < 0) {
@@ -150,7 +139,7 @@ printk("reset gpio : %d\n", bdata->reset_gpio);
 			bdata->reset_active_ms = value;
 		}
 	} else {
-		bdata->reset_gpio = -1;
+		bdata->reset_active_ms = 0;
 	}
 
 	prop = of_find_property(np, "synaptics,reset-delay-ms", NULL);
@@ -515,12 +504,11 @@ static void synaptics_rmi4_i2c_dev_release(struct device *dev)
 	return;
 }
 
-static int synaptics_rmi4_i2c_probe(struct i2c_client *client,
-		const struct i2c_device_id *dev_id)
+static int synaptics_rmi4_i2c_probe(struct i2c_client *client)
 {
 	int retval;
 
-	pr_err("yinchenyang in lansi td4310 i2c probe\n");
+	dev_err(&client->dev, "yinchenyang in lansi td4310 i2c probe\n");
 	if (!i2c_check_functionality(client->adapter,
 			I2C_FUNC_SMBUS_BYTE_DATA)) {
 		dev_err(&client->dev,
@@ -595,11 +583,9 @@ static int synaptics_rmi4_i2c_probe(struct i2c_client *client,
 	return 0;
 }
 
-static int synaptics_rmi4_i2c_remove(struct i2c_client *client)
+static void synaptics_rmi4_i2c_remove(struct i2c_client *client)
 {
 	platform_device_unregister(synaptics_dsx_i2c_device);
-
-	return 0;
 }
 
 static const struct i2c_device_id synaptics_rmi4_id_table[] = {

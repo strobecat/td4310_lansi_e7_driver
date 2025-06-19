@@ -41,7 +41,7 @@
 #include <linux/firmware.h>
 #include <linux/platform_device.h>
 
-#include <synaptics_dsx.h>
+#include "synaptics_dsx.h"
 #include "synaptics_dsx_core.h"
 #include <linux/proc_fs.h>
 
@@ -870,9 +870,9 @@ static int ctp_lockdown_proc_open (struct inode *inode, struct file *file)
 	return single_open (file, ctp_lockdown_proc_show, inode->i_private);
 }
 
-static const struct file_operations ctp_lockdown_proc_fops = {
-	.open = ctp_lockdown_proc_open,
-	.read = seq_read,
+static const struct proc_ops ctp_lockdown_proc_fops = {
+	.proc_open = ctp_lockdown_proc_open,
+	.proc_read = seq_read,
 };
 #endif
 DECLARE_COMPLETION (fwu_remove_complete_lansi);

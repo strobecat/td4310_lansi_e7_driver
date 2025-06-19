@@ -87,11 +87,11 @@ struct synaptics_dsx_board_data {
 	bool y_flip;
 	bool swap_axes;
 	int irq;
-	int irq_gpio;
+	struct gpio_desc *irq_gpio;
 	int irq_on_state;
-	int power_gpio;
+	struct gpio_desc *power_gpio;
 	int power_on_state;
-	int reset_gpio;
+	struct gpio_desc *reset_gpio;
 	int reset_on_state;
 	int display_reset_gpio;
 	int max_y_for_2d;

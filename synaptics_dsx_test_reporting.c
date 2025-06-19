@@ -41,7 +41,7 @@
 #include <linux/ctype.h>
 #include <linux/hrtimer.h>
 #include <linux/platform_device.h>
-#include <linux/input/synaptics_dsx.h>
+#include "synaptics_dsx.h"
 #include "synaptics_dsx_core.h"
 
 #include <linux/proc_fs.h>
@@ -5210,12 +5210,12 @@ static int tp_data_dump_proc_open (struct inode *inode, struct file *file) {
 	return single_open (file, tp_data_dump_proc_show, NULL);
 }
 
-static const struct file_operations tp_data_dump_proc_fops = {
-	.owner = THIS_MODULE,
-	.open = tp_data_dump_proc_open,
-	.read = seq_read,
-	.llseek = seq_lseek,
-	.release = single_release,
+static const struct proc_ops tp_data_dump_proc_fops = {
+	// .owner = THIS_MODULE,
+	.proc_open = tp_data_dump_proc_open,
+	.proc_read = seq_read,
+	.proc_lseek = seq_lseek,
+	.proc_release = single_release,
 };
 
 static int test_set_sysfs (void)
@@ -7402,8 +7402,7 @@ static int synaptics_rmi4_test_init (struct synaptics_rmi4_data *rmi4_data)
 			create_singlethread_workqueue ("test_report_workqueue");
 	INIT_WORK (&f54->test_report_work, test_report_work);
 
-	hrtimer_init (&f54->watchdog, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-	f54->watchdog.function = test_get_report_timeout;
+	hrtimer_setup (&f54->watchdog, test_get_report_timeout, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	INIT_WORK (&f54->timeout_work, test_timeout_work);
 
 	mutex_init (&f54->status_mutex);

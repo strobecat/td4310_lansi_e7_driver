@@ -42,7 +42,7 @@
 #include <linux/platform_device.h>
 #include <linux/regulator/consumer.h>
 
-#include <synaptics_dsx.h>
+#include "synaptics_dsx.h"
 #include "synaptics_dsx_core.h"
 #include <linux/delay.h>
 #include <linux/workqueue.h>
@@ -1829,7 +1829,7 @@ static irqreturn_t synaptics_rmi4_irq (int irq, void *data)
 	const struct synaptics_dsx_board_data *bdata =
 			rmi4_data->hw_if->board_data;
 
-	if (gpio_get_value (bdata->irq_gpio) != bdata->irq_on_state)
+	if (gpiod_get_value (bdata->irq_gpio) != bdata->irq_on_state)
 		goto exit;
 
 	synaptics_rmi4_sensor_report (rmi4_data, true);
@@ -3362,37 +3362,6 @@ flash_prog_mode:
 	return 0;
 }
 
-static int synaptics_rmi4_gpio_setup (int gpio, bool config, int dir, int state)
-{
-	int retval = 0;
-	unsigned char buf[16];
-
-	if (config) {
-		snprintf (buf, PAGE_SIZE, "dsx_gpio_%u\n", gpio);
-
-		retval = gpio_request (gpio, buf);
-		if (retval) {
-			pr_err ("%s: Failed to get gpio %d (code: %d)",
-					__func__, gpio, retval);
-			return retval;
-		}
-
-		if (dir == 0)
-			retval = gpio_direction_input (gpio);
-		else
-			retval = gpio_direction_output (gpio, state);
-		if (retval) {
-			pr_err ("%s: Failed to set gpio %d direction",
-					__func__, gpio);
-			return retval;
-		}
-	} else {
-		gpio_free (gpio);
-	}
-
-	return retval;
-}
-
 static void synaptics_rmi4_set_params (struct synaptics_rmi4_data *rmi4_data)
 {
 	unsigned char ii;
@@ -3602,67 +3571,22 @@ err_input_device:
 
 static int synaptics_rmi4_set_gpio (struct synaptics_rmi4_data *rmi4_data)
 {
-	int retval;
 	const struct synaptics_dsx_board_data *bdata =
 			rmi4_data->hw_if->board_data;
 
-	retval = synaptics_rmi4_gpio_setup (
-			bdata->irq_gpio,
-			true, 0, 0);
-	if (retval < 0) {
-		dev_err (rmi4_data->pdev->dev.parent,
-				"%s: Failed to configure attention GPIO\n",
-				__func__);
-		goto err_gpio_irq;
-	}
-
-	if (bdata->power_gpio >= 0) {
-		retval = synaptics_rmi4_gpio_setup (
-				bdata->power_gpio,
-				true, 1, !bdata->power_on_state);
-		if (retval < 0) {
-			dev_err (rmi4_data->pdev->dev.parent,
-					"%s: Failed to configure power GPIO\n",
-					__func__);
-			goto err_gpio_power;
-		}
-	}
-
-	if (bdata->reset_gpio >= 0) {
-		retval = synaptics_rmi4_gpio_setup (
-				bdata->reset_gpio,
-				true, 1, !bdata->reset_on_state);
-		if (retval < 0) {
-			dev_err (rmi4_data->pdev->dev.parent,
-					"%s: Failed to configure reset GPIO\n",
-					__func__);
-			goto err_gpio_reset;
-		}
-	}
-
-	if (bdata->power_gpio >= 0) {
-		gpio_set_value (bdata->power_gpio, bdata->power_on_state);
+	if (!IS_ERR(bdata->power_gpio)) {
+		gpiod_set_value (bdata->power_gpio, bdata->power_on_state);
 		msleep (bdata->power_delay_ms);
 	}
 
-	if (bdata->reset_gpio >= 0) {
-		gpio_set_value (bdata->reset_gpio, bdata->reset_on_state);
+	if (!IS_ERR(bdata->reset_gpio)) {
+		gpiod_set_value (bdata->reset_gpio, bdata->reset_on_state);
 		msleep (bdata->reset_active_ms);
-		gpio_set_value (bdata->reset_gpio, !bdata->reset_on_state);
+		gpiod_set_value (bdata->reset_gpio, !bdata->reset_on_state);
 		msleep (bdata->reset_delay_ms);
 	}
 
 	return 0;
-
-err_gpio_reset:
-	if (bdata->power_gpio >= 0)
-		synaptics_rmi4_gpio_setup (bdata->power_gpio, false, 0, 0);
-
-err_gpio_power:
-	synaptics_rmi4_gpio_setup (bdata->irq_gpio, false, 0, 0);
-
-err_gpio_irq:
-	return retval;
 }
 
 static int synaptics_rmi4_get_reg (struct synaptics_rmi4_data *rmi4_data,
@@ -4230,11 +4154,11 @@ struct synaptics_rmi4_data *rmi4_data =
 			"%s Failed to read product info, need to do HW RESET\n",
 			__func__);
 
-		gpio_set_value (bdata->reset_gpio, 1);
+		gpiod_set_value (bdata->reset_gpio, 1);
 		mdelay (20);
-		gpio_set_value (bdata->reset_gpio, 0);
+		gpiod_set_value (bdata->reset_gpio, 0);
 		mdelay (20);
-		gpio_set_value (bdata->reset_gpio, 1);
+		gpiod_set_value (bdata->reset_gpio, 1);
 		mdelay (200);
 
     }
@@ -4381,7 +4305,7 @@ static int synaptics_rmi4_probe (struct platform_device *pdev)
 		exp_data.initialized = true;
 	}
 
-	rmi4_data->irq = gpio_to_irq (bdata->irq_gpio);
+	rmi4_data->irq = gpiod_to_irq (bdata->irq_gpio);
 
 	retval = synaptics_rmi4_irq_enable (rmi4_data, true, false);
 	if (retval < 0) {
@@ -4495,6 +4419,7 @@ err_enable_irq:
 	}
 
 err_set_input_dev:
+	/*
 	synaptics_rmi4_gpio_setup (bdata->irq_gpio, false, 0, 0);
 
 	if (bdata->reset_gpio >= 0)
@@ -4502,7 +4427,7 @@ err_set_input_dev:
 
 	if (bdata->power_gpio >= 0)
 		synaptics_rmi4_gpio_setup (bdata->power_gpio, false, 0, 0);
-
+	*/
 err_ui_hw_init:
 err_set_gpio:
 	synaptics_rmi4_enable_reg (rmi4_data, false);
@@ -4516,12 +4441,10 @@ err_get_reg:
 	return retval;
 }
 
-static int synaptics_rmi4_remove (struct platform_device *pdev)
+static void synaptics_rmi4_remove (struct platform_device *pdev)
 {
 	unsigned char attr_count;
 	struct synaptics_rmi4_data *rmi4_data = platform_get_drvdata (pdev);
-	const struct synaptics_dsx_board_data *bdata =
-			rmi4_data->hw_if->board_data;
 
 #ifdef FB_READY_RESET
 	cancel_work_sync (&rmi4_data->reset_work);
@@ -4572,6 +4495,7 @@ printk ("Enter %s\n", __func__);
 		rmi4_data->stylus_dev = NULL;
 	}
 
+	/*
 	synaptics_rmi4_gpio_setup (bdata->irq_gpio, false, 0, 0);
 
 	if (bdata->reset_gpio >= 0)
@@ -4579,13 +4503,12 @@ printk ("Enter %s\n", __func__);
 
 	if (bdata->power_gpio >= 0)
 		synaptics_rmi4_gpio_setup (bdata->power_gpio, false, 0, 0);
+	*/
 
 	synaptics_rmi4_enable_reg (rmi4_data, false);
 	synaptics_rmi4_get_reg (rmi4_data, false);
 
 	kfree (rmi4_data);
-
-	return 0;
 }
 
 #ifdef CONFIG_FB

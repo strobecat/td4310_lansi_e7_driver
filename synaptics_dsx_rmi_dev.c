@@ -45,7 +45,7 @@
 #include <linux/cdev.h>
 #include <linux/platform_device.h>
 
-#include <synaptics_dsx.h>
+#include "synaptics_dsx.h"
 #include "synaptics_dsx_core.h"
 
 #define CHAR_DEVICE_NAME "rmi"
@@ -103,8 +103,8 @@ struct rmidev_handle {
 	struct device dev;
 	struct synaptics_rmi4_data *rmi4_data;
 	struct kobject *sysfs_dir;
-	struct siginfo interrupt_signal;
-	struct siginfo terminate_signal;
+	struct kernel_siginfo interrupt_signal;
+	struct kernel_siginfo terminate_signal;
 	struct task_struct *task;
 	void *data;
 	bool concurrent;
@@ -377,7 +377,7 @@ static ssize_t rmidev_sysfs_attn_state_show(struct device *dev,
 	const struct synaptics_dsx_board_data *bdata =
 			rmi4_data->hw_if->board_data;
 
-	attn_state = gpio_get_value(bdata->irq_gpio);
+	attn_state = gpiod_get_value(bdata->irq_gpio);
 
 	return snprintf(buf, PAGE_SIZE, "%u\n", attn_state);
 }
@@ -759,7 +759,7 @@ static void rmidev_device_cleanup(struct rmidev_data *dev_data)
 	return;
 }
 
-static char *rmi_char_devnode(struct device *dev, umode_t *mode)
+static char *rmi_char_devnode(const struct device *dev, umode_t *mode)
 {
 	if (!mode)
 		return NULL;
@@ -774,7 +774,7 @@ static int rmidev_create_device_class(void)
 	if (rmidev_device_class != NULL)
 		return 0;
 
-	rmidev_device_class = class_create(THIS_MODULE, DEVICE_CLASS_NAME);
+	rmidev_device_class = class_create(DEVICE_CLASS_NAME);
 
 	if (IS_ERR(rmidev_device_class)) {
 		pr_err("%s: Failed to create /dev/%s\n",
@@ -897,13 +897,13 @@ static int rmidev_init_device(struct synaptics_rmi4_data *rmi4_data)
 		goto err_char_device;
 	}
 
-	retval = gpio_export(bdata->irq_gpio, false);
+	retval = gpiod_export(bdata->irq_gpio, false);
 	if (retval < 0) {
 		dev_err(rmi4_data->pdev->dev.parent,
 				"%s: Failed to export attention gpio\n",
 				__func__);
 	} else {
-		retval = gpio_export_link(&(rmi4_data->input_dev->dev),
+		retval = gpiod_export_link(&(rmi4_data->input_dev->dev),
 				"attn", bdata->irq_gpio);
 		if (retval < 0) {
 			dev_err(rmi4_data->pdev->dev.parent,
@@ -912,7 +912,7 @@ static int rmidev_init_device(struct synaptics_rmi4_data *rmi4_data)
 		} else {
 			dev_dbg(rmi4_data->pdev->dev.parent,
 					"%s: Exported attention gpio %d\n",
-					__func__, bdata->irq_gpio);
+					__func__, desc_to_gpio(bdata->irq_gpio));
 		}
 	}
 
@@ -960,7 +960,7 @@ err_sysfs_bin:
 
 err_sysfs_dir:
 	sysfs_remove_link(&(rmi4_data->input_dev->dev.kobj), "attn");
-	gpio_unexport(bdata->irq_gpio);
+	gpiod_unexport(bdata->irq_gpio);
 
 err_char_device:
 	rmidev_device_cleanup(dev_data);
@@ -1003,7 +1003,7 @@ static void rmidev_remove_device(struct synaptics_rmi4_data *rmi4_data)
 	kobject_put(rmidev->sysfs_dir);
 
 	sysfs_remove_link(&(rmi4_data->input_dev->dev.kobj), "attn");
-	gpio_unexport(bdata->irq_gpio);
+	gpiod_unexport(bdata->irq_gpio);
 
 	dev_data = rmidev->data;
 	if (dev_data) {
