@@ -5,6 +5,7 @@
  *
  * Copyright (C) 2012 Alexandra Chin <alexandra.chin@tw.synaptics.com>
  * Copyright (C) 2012 Scott Lin <scott.lin@tw.synaptics.com>
+ * Copyright (C) 2018 XiaoMi, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -61,15 +62,23 @@
 #else
 #define sstrtoul(...) strict_strtoul(__VA_ARGS__)
 #endif
+
+
+#ifdef SYNAPTICS_ESD_CHECK
+#define SYNAPTICS_ESD_CHECK_CIRCLE 2*HZ
+#endif
+
+
 /*
-*#define F51_DISCRETE_FORCE
-*#ifdef F51_DISCRETE_FORCE
-*#define FORCE_LEVEL_ADDR 0x0419
-*#define FORCE_LEVEL_MAX 255
-*#define CAL_DATA_SIZE 144
-*#endif
-*#define SYNA_TDDI
+#define F51_DISCRETE_FORCE
+#ifdef F51_DISCRETE_FORCE
+#define FORCE_LEVEL_ADDR 0x0419
+#define FORCE_LEVEL_MAX 255
+#define CAL_DATA_SIZE 144
+#endif
+#define SYNA_TDDI
 */
+#define SYNA_TDDI
 #define PDT_PROPS (0X00EF)
 #define PDT_START (0x00E9)
 #define PDT_END (0x00D0)
@@ -123,10 +132,6 @@
 #define MASK_3BIT 0x07
 #define MASK_2BIT 0x03
 #define MASK_1BIT 0x01
-
-#define PINCTRL_STATE_ACTIVE    "pmx_ts_active"
-#define PINCTRL_STATE_SUSPEND   "pmx_ts_suspend"
-#define PINCTRL_STATE_RELEASE   "pmx_ts_release"
 
 enum exp_fn {
 	RMI_DEV = 0,
@@ -330,7 +335,6 @@ struct synaptics_rmi4_device_info {
  * @sensor_max_y: maximum y coordinate for 2D touch
  * @force_min: minimum force value
  * @force_max: maximum force value
- * @set_wakeup_gesture: location of set wakeup gesture
  * @flash_prog_mode: flag to indicate flash programming mode status
  * @irq_enabled: flag to indicate attention interrupt enable status
  * @fingers_on_2d: flag to indicate presence of fingers in 2D area
@@ -366,17 +370,19 @@ struct synaptics_rmi4_data {
 	struct mutex rmi4_io_ctrl_mutex;
 	struct mutex rmi4_exp_init_mutex;
 	struct mutex rmi4_irq_enable_mutex;
+	struct mutex rmi4_esd_mutex;
 	struct delayed_work rb_work;
 	struct workqueue_struct *rb_workqueue;
-	struct pinctrl *ts_pinctrl;
-	struct pinctrl_state *pinctrl_state_active;
-	struct pinctrl_state *pinctrl_state_suspend;
-	struct pinctrl_state *pinctrl_state_release;
 #ifdef CONFIG_FB
 	struct notifier_block fb_notifier;
 	struct work_struct reset_work;
 	struct workqueue_struct *reset_workqueue;
 #endif
+#ifdef SYNAPTICS_ESD_CHECK
+	struct delayed_work esd_work;
+	struct workqueue_struct *esd_workqueue;
+#endif
+
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	struct early_suspend early_suspend;
 #endif
@@ -406,9 +412,6 @@ struct synaptics_rmi4_data {
 	int sensor_max_y;
 	int force_min;
 	int force_max;
-	int set_wakeup_gesture;
-	int avdd_status;
-	int vdd_status;
 	bool flash_prog_mode;
 	bool irq_enabled;
 	bool fingers_on_2d;
@@ -428,7 +431,7 @@ struct synaptics_rmi4_data {
 			bool rebuild);
 	int (*irq_enable)(struct synaptics_rmi4_data *rmi4_data, bool enable,
 			bool attn_only);
-	int (*sleep_enable)(struct synaptics_rmi4_data *rmi4_data,
+	void (*sleep_enable)(struct synaptics_rmi4_data *rmi4_data,
 			bool enable);
 	void (*report_touch)(struct synaptics_rmi4_data *rmi4_data,
 			struct synaptics_rmi4_fn *fhandler);
@@ -463,14 +466,14 @@ struct synaptics_rmi4_exp_fn {
 			unsigned char intr_mask);
 };
 
-int synaptics_rmi4_bus_init(void);
+int synaptics_rmi4_bus_init_lansi(void);
 
-void synaptics_rmi4_bus_exit(void);
+void synaptics_rmi4_bus_exit_lansi(void);
 
-void synaptics_rmi4_new_function(struct synaptics_rmi4_exp_fn *exp_fn_module,
+void synaptics_rmi4_new_function_lansi(struct synaptics_rmi4_exp_fn *exp_fn_module,
 		bool insert);
 
-int synaptics_fw_updater(const unsigned char *fw_data);
+int synaptics_fw_updater_lansi(const unsigned char *fw_data);
 
 static inline int synaptics_rmi4_reg_read(
 		struct synaptics_rmi4_data *rmi4_data,
